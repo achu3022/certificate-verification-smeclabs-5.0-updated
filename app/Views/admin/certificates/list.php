@@ -421,7 +421,12 @@
                 </div>
                 <div class="btn-toolbar">
                     <div class="btn-group me-2">
-                        <a href="<?= site_url('admin/certificates/export?' . http_build_query($filters)) ?>" class="btn btn-sm btn-outline-primary">
+                        <?php 
+                            $currentPage = isset($pager) && $pager ? (int)$pager->getCurrentPage() : 1;
+                            $perPageSel = $filters['per_page'] ?? 10;
+                            $exportQuery = http_build_query(array_merge($filters, ['page' => $currentPage, 'per_page' => $perPageSel]));
+                        ?>
+                        <a id="exportBtn" href="<?= site_url('admin/certificates/export?' . $exportQuery) ?>" class="btn btn-sm btn-outline-primary">
                             <i class="fas fa-file-export me-1"></i> Export
                         </a>
                         <button type="button" class="btn btn-sm btn-success me-1" data-bs-toggle="modal" data-bs-target="#singleAddModal">
@@ -531,10 +536,11 @@
                                             <div class="col-md-4">
                                                 <label class="form-label small text-muted mb-1">Certificates per page</label>
                                                 <select name="per_page" class="form-select" onchange="$('#searchForm').submit();">
-                                                    <option value="10" <?= (service('request')->getGet('per_page') ?? 10) == 10 ? 'selected' : '' ?>>10</option>
-                                                    <option value="50" <?= (service('request')->getGet('per_page') ?? 10) == 50 ? 'selected' : '' ?>>50</option>
-                                                    <option value="100" <?= (service('request')->getGet('per_page') ?? 10) == 100 ? 'selected' : '' ?>>100</option>
-                                                    <option value="500" <?= (service('request')->getGet('per_page') ?? 10) == 500 ? 'selected' : '' ?>>500</option>
+                                                    <?php $pp = service('request')->getGet('per_page') ?? 10; ?>
+                                                    <option value="10" <?= $pp == 10 ? 'selected' : '' ?>>10</option>
+                                                    <option value="50" <?= $pp == 50 ? 'selected' : '' ?>>50</option>
+                                                    <option value="100" <?= $pp == 100 ? 'selected' : '' ?>>100</option>
+                                                    <option value="500" <?= $pp == 500 ? 'selected' : '' ?>>500</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -595,6 +601,11 @@
                                                         Reject
                                                     </button>
                                                 <?php endif; ?>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary view-certificate me-1" 
+                                                        data-bs-toggle="modal" data-bs-target="#viewModal"
+                                                        data-id="<?= $cert['id'] ?>">
+                                                    View
+                                                </button>
                                                 <button type="button" class="btn btn-sm btn-outline-primary edit-certificate" 
                                                         data-bs-toggle="modal" data-bs-target="#editModal"
                                                         data-id="<?= $cert['id'] ?>">
@@ -606,6 +617,11 @@
                                                     Delete
                                                 </button>
                                             <?php elseif (session('role') === 'admin'): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary view-certificate me-1" 
+                                                        data-bs-toggle="modal" data-bs-target="#viewModal"
+                                                        data-id="<?= $cert['id'] ?>">
+                                                    View
+                                                </button>
                                                 <button type="button" class="btn btn-sm btn-outline-primary edit-certificate" 
                                                         data-bs-toggle="modal" data-bs-target="#editModal"
                                                         data-id="<?= $cert['id'] ?>">
@@ -790,6 +806,38 @@
     </div>
 </div>
 
+<!-- View Certificate Modal -->
+<div class="modal fade" id="viewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Certificate Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="mb-2"><strong>Certificate No:</strong> <span id="view_certificate_no">—</span></div>
+                        <div class="mb-2"><strong>Admission No:</strong> <span id="view_admission_no">—</span></div>
+                        <div class="mb-2"><strong>Student Name:</strong> <span id="view_student_name">—</span></div>
+                        <div class="mb-2"><strong>Course:</strong> <span id="view_course">—</span></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-2"><strong>Start Date:</strong> <span id="view_start_date">—</span></div>
+                        <div class="mb-2"><strong>End Date:</strong> <span id="view_end_date">—</span></div>
+                        <div class="mb-2"><strong>Date of Issue:</strong> <span id="view_date_of_issue">—</span></div>
+                        <div class="mb-2"><strong>Status:</strong> <span id="view_status" class="badge bg-secondary">—</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+    
+</div>
+
 <!-- Edit Certificate Modal -->
 <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -921,7 +969,10 @@ $(document).ready(function() {
 
         // Show loading state
         const submitBtn = $('#searchForm').find('button[type="submit"]');
-        const originalBtnText = submitBtn.html();
+        // Store original HTML once to avoid capturing the spinner as original
+        if (!submitBtn.data('originalHtml')) {
+            submitBtn.data('originalHtml', submitBtn.html());
+        }
         submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i> Filtering...');
 
         // Show loading indicator
@@ -967,7 +1018,9 @@ $(document).ready(function() {
             },
             complete: function() {
                 // Reset button state
-                submitBtn.prop('disabled', false).html(originalBtnText);
+                const restoreHtml = submitBtn.data('originalHtml') || 'Filter';
+                submitBtn.prop('disabled', false).html(restoreHtml);
+                submitBtn.removeData('originalHtml');
             }
         });
     }
@@ -1035,13 +1088,7 @@ $(document).ready(function() {
         }, 500);
     });
     
-    // Form submission handler
-    $('#searchForm').on('submit', function(e) {
-        e.preventDefault();
-        updateResults();
-    });
-    
-    // Handle form submission with AJAX for better UX
+    // Form submission handler (single binding)
     $('#searchForm').on('submit', function(e) {
         e.preventDefault();
         updateResults();
@@ -1055,9 +1102,21 @@ $(document).ready(function() {
     });
 
     // Export functionality
-    $('#exportBtn').on('click', function() {
+    $('#exportBtn').on('click', function(e) {
+        e.preventDefault();
         const formData = $('#searchForm').serialize();
-        const exportUrl = '<?= site_url('admin/certificates/export') ?>?' + formData;
+        const params = new URLSearchParams(formData);
+        // Ensure per_page reflects the current selector value explicitly
+        const perPageVal = $('select[name="per_page"]').val();
+        if (perPageVal) {
+            params.set('per_page', perPageVal);
+        }
+        // Preserve current page from URL if present so export matches the visible page
+        const currentPage = new URLSearchParams(window.location.search).get('page');
+        if (currentPage) {
+            params.set('page', currentPage);
+        }
+        const exportUrl = '<?= site_url('admin/certificates/export') ?>?' + params.toString();
 
 
         // Show loading state
@@ -1399,6 +1458,52 @@ $(document).ready(function() {
         console.log('Loading certificate data for ID:', currentCertificateId);
         loadCertificateData(currentCertificateId);
     });
+    
+    // Handle view button click
+    $(document).on('click', '.view-certificate', function(e) {
+        e.preventDefault();
+        const id = $(this).data('id');
+        // Fetch details
+        $.ajax({
+            url: '<?= base_url('admin/certificate/get/') ?>' + id,
+            type: 'GET',
+            dataType: 'json',
+            success: function(response) {
+                if (response.success && response.data) {
+                    const c = response.data;
+                    $('#view_certificate_no').text(c.certificate_no || '—');
+                    $('#view_admission_no').text(c.admission_no || '—');
+                    $('#view_student_name').text(c.student_name || '—');
+                    $('#view_course').text(c.course || '—');
+                    $('#view_start_date').text(c.start_date ? formatDate(c.start_date) : '—');
+                    $('#view_end_date').text(c.end_date ? formatDate(c.end_date) : '—');
+                    $('#view_date_of_issue').text(c.date_of_issue ? formatDate(c.date_of_issue) : '—');
+                    const status = (c.status || '—');
+                    const badgeClass = status === 'Verified' ? 'bg-success' : (status === 'Pending' ? 'bg-warning text-dark' : 'bg-danger');
+                    $('#view_status').removeClass('bg-success bg-warning bg-danger text-dark bg-secondary').addClass(badgeClass).text(status);
+                } else {
+                    showAlert('danger', response.message || 'Failed to load certificate details');
+                }
+            },
+            error: function() {
+                showAlert('danger', 'Error loading certificate details');
+            }
+        });
+    });
+
+    function formatDate(d) {
+        // Expecting YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
+        try {
+            const parts = d.toString().split(' ')[0].split('-');
+            if (parts.length === 3) {
+                const dt = new Date(parts[0], parts[1]-1, parts[2]);
+                return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+            }
+            return d;
+        } catch (_) {
+            return d;
+        }
+    }
     
     // Form validation
     (function() {

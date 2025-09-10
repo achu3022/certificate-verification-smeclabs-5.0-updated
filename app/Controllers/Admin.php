@@ -96,6 +96,7 @@ class Admin extends BaseController
             'total_certificates' => $this->certificateModel->countAll(),
             'verified_certificates' => $this->certificateModel->where('status', 'Verified')->countAllResults(),
             'pending_certificates' => $this->certificateModel->where('status', 'Pending')->countAllResults(),
+            'rejected_certificates' => $this->certificateModel->where('status', 'Rejected')->countAllResults(),
             'recent_certificates' => $this->certificateModel->orderBy('created_at', 'DESC')->limit(10)->find(),
             'recent_searches' => $this->searchLogModel->orderBy('created_at', 'DESC')->limit(10)->find(),
         ];
@@ -134,9 +135,11 @@ class Admin extends BaseController
             'per_page' => $request->getGet('per_page') ?? 10,
         ];
         
-        // Validate and set per_page
-        $allowedPerPage = [10, 25, 50, 100];
-        $perPage = in_array($filters['per_page'], $allowedPerPage) ? (int)$filters['per_page'] : 10;
+        // Validate and set per_page: allow 10, 50, 100, 500; default to 10
+        $allowedPerPage = [10, 50, 100, 500];
+        $perPage = in_array((int)$filters['per_page'], $allowedPerPage) ? (int)$filters['per_page'] : 10;
+        // Persist selection for export fallback
+        session()->set('cert_per_page', $perPage);
         
         // Build the query
         $builder = $this->certificateModel;
@@ -175,8 +178,8 @@ class Admin extends BaseController
             $builder->where('date_of_issue <=', $filters['date_to']);
         }
         
-        // Get paginated results
-        $certificates = $builder->orderBy('created_at', 'DESC')->paginate($perPage);
+        // Get paginated results - show last entered first (id DESC)
+        $certificates = $builder->orderBy('id', 'DESC')->paginate($perPage);
         $pager = $this->certificateModel->pager;
         
         $data = [
@@ -499,11 +502,14 @@ class Admin extends BaseController
             $builder->where('date_of_issue <=', $filters['date_to']);
         }
 
-        // Get paginated results
-        $allowedPerPage = [10, 25, 50, 100, 500];
+        // Get paginated results - allow 10, 50, 100, 500; default to 10
+        $allowedPerPage = [10, 50, 100, 500];
         $perPage = in_array((int)$filters['per_page'], $allowedPerPage) ? (int)$filters['per_page'] : 10;
+        // Persist selection for export fallback
+        session()->set('cert_per_page', $perPage);
         $currentPage = (int)($request->getGet('page') ?? 1);
-        $certificates = $builder->orderBy('created_at', 'DESC')->paginate($perPage, 'default', $currentPage);
+        // Show last entered first (id DESC)
+        $certificates = $builder->orderBy('id', 'DESC')->paginate($perPage, 'default', $currentPage);
         $pager = $this->certificateModel->pager;
 
         // Generate table body HTML
@@ -575,14 +581,16 @@ class Admin extends BaseController
                 'per_page' => $request->getGet('per_page') ?? 10,
             ];
 
-            // Validate and set per_page
+            // Validate and set per_page (cast to int and use strict match) with session fallback
             $allowedPerPage = [10, 50, 100, 500];
-            $perPage = in_array($filters['per_page'], $allowedPerPage) ? (int)$filters['per_page'] : 10;
+            $reqPerPage = (int) ($request->getGet('per_page') ?? session()->get('cert_per_page') ?? 10);
+            $perPage = in_array($reqPerPage, $allowedPerPage, true) ? $reqPerPage : 10;
 
-            $currentPage = $request->getGet('page') ?? 1;
+            $currentPage = (int)($request->getGet('page') ?? 1);
+            if ($currentPage < 1) { $currentPage = 1; }
 
-            // Build the query (same logic as filtering)
-            $builder = $this->certificateModel;
+            // Build the query (same logic as filtering) using Query Builder
+            $builder = $this->certificateModel->builder();
 
             // Apply filters
             if (!empty($filters['search'])) {
@@ -590,7 +598,7 @@ class Admin extends BaseController
                     ->like('certificate_no', $filters['search'])
                     ->orLike('admission_no', $filters['search'])
                     ->orLike('student_name', $filters['search'])
-                    ->orLike('course', $filters['course'])
+                    ->orLike('course', $filters['search'])
                     ->groupEnd();
             }
 
@@ -618,8 +626,9 @@ class Admin extends BaseController
                 $builder->where('date_of_issue <=', $filters['date_to']);
             }
 
-            // Get paginated results for export (respect per_page and current page)
-            $certificates = $builder->paginate($perPage, 'default', $currentPage);
+            // Get results for export with explicit limit/offset so count matches selected per_page
+            $offset = ($currentPage - 1) * $perPage;
+            $certificates = $builder->orderBy('id', 'DESC')->get($perPage, $offset)->getResultArray();
 
             // Create spreadsheet
             $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();

@@ -107,14 +107,24 @@
         background: #fff;
     }
     .stat-card .icon-wrapper {
-        width: 65px;
-        height: 65px;
+        width: 50px;
+        height: 50px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         background: rgba(255, 255, 255, 0.2);
-        margin-bottom: 15px;
+        margin-bottom: 10px;
+    }
+    .stat-card .card-body {
+        padding: 1rem 1rem;
+    }
+    .stat-card h3 {
+        font-size: 1.35rem;
+        line-height: 1.2;
+    }
+    .stat-card .icon-wrapper i {
+        font-size: 1.1rem;
     }
     /* Table Styles */
     .table-responsive {
@@ -240,8 +250,8 @@
         </div>
 
         <!-- Statistics Cards -->
-        <div class="row g-3 mb-4">
-            <div class="col-12 col-sm-6 col-xl-3">
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 row-cols-xxl-5 g-3 mb-4">
+            <div class="col">
                 <div class="card stat-card">
                     <div class="card-body">
                         <div class="icon-wrapper bg-primary bg-gradient">
@@ -252,7 +262,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-12 col-sm-6 col-xl-3">
+            <div class="col">
                 <div class="card stat-card">
                     <div class="card-body">
                         <div class="icon-wrapper bg-success bg-gradient">
@@ -263,7 +273,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-12 col-sm-6 col-xl-3">
+            <div class="col">
                 <div class="card stat-card">
                     <div class="card-body">
                         <div class="icon-wrapper bg-warning bg-gradient">
@@ -274,8 +284,19 @@
                     </div>
                 </div>
             </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body">
+                        <div class="icon-wrapper bg-danger bg-gradient">
+                            <i class="fas fa-times-circle fa-2x text-white"></i>
+                        </div>
+                        <h3 class="fw-bold mb-1"><?= $rejected_certificates ?></h3>
+                        <p class="text-muted mb-0">Rejected Certificates</p>
+                    </div>
+                </div>
+            </div>
             <?php if (session()->get('role') === 'super_admin' && isset($total_admins)): ?>
-            <div class="col-12 col-sm-6 col-xl-3">
+            <div class="col">
                 <div class="card stat-card">
                     <div class="card-body">
                         <div class="icon-wrapper bg-info bg-gradient">
