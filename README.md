@@ -31,6 +31,7 @@ A powerful **certificate management system** with role-based access, version con
 | **3.1**     | • View admin profiles                                                                                                                                                  |
 | **3.1.2**   | • Export options:<br>  – Export filtered results to Excel<br>  – Export full data to Excel                                                                             |
 | **4.0**     | • Final tested release<br>  – Improved user interface                                                                                                                  |
+ **5.0**     | • Final tested release<br>  – Add company details fetching for verification <br>   - View it in admin Dashboard                                                                                                                  |
 
 ---
 
