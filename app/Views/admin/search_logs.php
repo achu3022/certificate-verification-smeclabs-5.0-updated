@@ -173,6 +173,9 @@
     .toggle-sidebar {
         display: none;
     }
+    .pagination .page-item:not(:last-child) {
+        margin-right: 5px;
+    }
 </style>
 <?= $this->endSection() ?>
 <?= $this->section('content') ?>
@@ -199,6 +202,12 @@
                 <i class="fas fa-search"></i> Search Logs
             </a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link" href="<?= site_url('admin/verifications') ?>">
+                <i class="fas fa-building"></i> Verification Requests
+            </a>
+        </li>
+        
         <?php if (session()->get('role') === 'super_admin'): ?>
         <li class="nav-item">
             <a class="nav-link" href="<?= site_url('admin/admins') ?>">

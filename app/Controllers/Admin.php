@@ -770,6 +770,60 @@ class Admin extends BaseController
         return view('admin/search_logs', $data);
     }
 
+    public function verifications()
+    {
+        // Load model
+        $verificationModel = new \App\Models\CertificateVerificationModel();
+
+        // Filters
+        $request = service('request');
+        $search = $request->getGet('search');
+        $perPage = (int) ($request->getGet('per_page') ?? 20);
+        $allowedPerPage = [10, 20, 50, 100];
+        if (!in_array($perPage, $allowedPerPage, true)) { $perPage = 20; }
+
+        // Build query with join to certificates
+        $builder = $verificationModel->builder();
+        $builder->select('certificate_verifications.*, certificates.certificate_no, certificates.student_name, certificates.course');
+        $builder->join('certificates', 'certificates.id = certificate_verifications.certificate_id', 'left');
+
+        if (!empty($search)) {
+            $builder->groupStart()
+                ->like('certificate_verifications.name', $search)
+                ->orLike('certificate_verifications.company_name', $search)
+                ->orLike('certificate_verifications.designation', $search)
+                ->orLike('certificate_verifications.contact_no', $search)
+                ->orLike('certificate_verifications.country', $search)
+                ->orLike('certificates.certificate_no', $search)
+                ->groupEnd();
+        }
+
+        // Count total and paginate
+        $total = $builder->countAllResults(false);
+        $page = (int) ($request->getGet('page') ?? 1);
+        if ($page < 1) { $page = 1; }
+        $offset = ($page - 1) * $perPage;
+
+        $records = $builder->orderBy('certificate_verifications.created_at', 'DESC')
+            ->get($perPage, $offset)
+            ->getResultArray();
+
+        $pager = service('pager');
+        $pager->makeLinks($page, $perPage, $total, 'default_full');
+
+        $data = [
+            'records' => $records,
+            'pager' => $pager,
+            'search' => $search,
+            'total' => $total,
+            'perPage' => $perPage,
+            'offset' => $offset,
+            'perPageOptions' => $allowedPerPage,
+        ];
+
+        return view('admin/verifications', $data);
+    }
+
     public function exportSearchLogs()
     {
         try {

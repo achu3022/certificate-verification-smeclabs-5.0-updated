@@ -6,7 +6,7 @@
 <style>
     .main-container {
         min-height: calc(100vh - 60px);
-        padding-bottom: 80px;
+        padding-bottom: 60px; /* reduced */
         overflow-x: hidden;
     }
     .site-footer {
@@ -16,7 +16,7 @@
         right: 0;
         background: linear-gradient(to right, #2563eb, #1e40af);
         color: white;
-        padding: 15px 0;
+        padding: 10px 0; /* reduced */
         z-index: 1000;
     }
     .search-section {
@@ -24,16 +24,32 @@
     }
     .results-section {
         display: none;
-        margin-top: 2rem;
-        padding: 2rem 0;
+        margin-top: 1rem; /* reduced */
+        padding: 1rem 0; /* reduced */
         border-top: 1px solid #e5e7eb;
         width: 100%;
         overflow: visible;
     }
+    /* Narrower max widths for search and results sections */
+    .search-section,
+    #resultsSection,
+    #verificationDetailsSection {
+        max-width: 840px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    /* Tighter paddings across components */
+    .card .card-body { padding: 0.75rem !important; }
+    .card-header { padding: 0.5rem 0.75rem !important; }
+    .table td, .table th { padding: 0.5rem 0.5rem !important; }
+    .list-group-item { padding: 0.5rem 0 !important; }
+    h3.mb-4 { margin-bottom: 0.75rem !important; }
     .results-section.active {
         display: block;
         animation: fadeInUp 0.5s ease;
     }
+    /* Ensure details section clears fixed footer and is close to results */
+    #verificationDetailsSection { margin-top: 8px; margin-bottom: 120px; }
     .no-results {
         text-align: center;
         padding: 3rem 0;
@@ -61,16 +77,16 @@
 <?= $this->endSection() ?>
 
 <?= $this->section('content') ?>
-<div class="main-container bg-light py-5">
+<div class="main-container bg-light py-3">
     <div class="container">
         <!-- Logo Section -->
-        <div class="text-center mb-5">
-            <img src="<?= base_url('smeclabs.png') ?>" alt="SMEC Labs Logo" class="img-fluid" style="max-height: 80px;">
+        <div class="text-center mb-3">
+            <img src="<?= base_url('smeclabs.png') ?>" alt="SMEC Labs Logo" class="img-fluid" style="max-height: 48px;">
         </div>
 
         <!-- Search Section -->
         <div class="row justify-content-center">
-            <div class="col-12 col-lg-10">
+            <div class="col-12 col-lg-8 col-xl-7">
                 <div class="search-section card shadow-lg border-0 rounded-4">
                     <div class="card-body p-4 p-md-5">
                         <h3 class="text-center mb-4 fw-bold text-primary">
@@ -149,8 +165,6 @@
                                         <thead class="bg-light">
                                             <tr>
                                                 <th class="py-3 px-4 text-uppercase small fw-bold text-muted">Certificate No</th>
-                                                <th class="py-3 px-4 text-uppercase small fw-bold text-muted">Course</th>
-                                                <th class="py-3 px-4 text-uppercase small fw-bold text-muted">Issue Date</th>
                                                 <th class="py-3 px-4 text-uppercase small fw-bold text-muted">Status</th>
                                                 <th class="py-3 px-4 text-uppercase small fw-bold text-muted text-center">Details</th>
                                             </tr>
@@ -159,8 +173,6 @@
                                             <?php foreach ($certificates as $cert): ?>
                                             <tr>
                                                 <td class="px-4 py-3 fw-semibold"><?= esc($cert['certificate_no']) ?></td>
-                                                <td class="px-4 py-3"><?= esc($cert['course']) ?></td>
-                                                <td class="px-4 py-3"><?= date('d M Y', strtotime($cert['date_of_issue'])) ?></td>
                                                 <td class="px-4 py-3">
                                                     <span class="certificate-badge badge bg-<?= $cert['status'] === 'Verified' ? 'success' : ($cert['status'] === 'Pending' ? 'warning' : 'danger') ?> rounded-pill px-3">
                                                         <i class="fas fa-<?= $cert['status'] === 'Verified' ? 'check-circle' : ($cert['status'] === 'Pending' ? 'clock' : 'times-circle') ?> me-1"></i>
@@ -170,7 +182,7 @@
                                                 <td class="px-4 py-3 text-center">
                                                     <button type="button" class="btn btn-sm btn-primary view-details" 
                                                             data-cert-id="<?= $cert['id'] ?>" data-bs-toggle="modal" data-bs-target="#certDetailsModal">
-                                                        <i class="fas fa-eye me-1"></i> View Details
+                                                        <i class="fas fa-eye me-1"></i> View More Details
                                                     </button>
                                                 </td>
                                             </tr>
@@ -219,6 +231,17 @@
                         </div>
                     <?php endif; ?>
                 </div>
+
+                <!-- Details Section rendered after submission (moved here to match width) -->
+                <div id="verificationDetailsSection" class="mt-3" style="display:none;">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-white">
+                            <h5 class="mb-0"><i class="fas fa-certificate me-2"></i>Certificate Details</h5>
+                        </div>
+                        <div class="card-body" id="verificationDetailsBody">
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -241,30 +264,62 @@
     </footer>
 </div>
 
-<!-- Certificate Details Modal -->
+<!-- View More Details Modal (Verification Form) -->
 <div class="modal fade" id="certDetailsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-primary text-white border-0">
                 <h5 class="modal-title">
-                    <i class="fas fa-certificate me-2"></i>
-                    Certificate Details
+                    <i class="fas fa-info-circle me-2"></i>
+                    Provide Your Information
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
-                <div id="certDetails">
-                    <!-- Details will be loaded here -->
-                    <div class="text-center py-4">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
+                <form id="verificationForm" action="<?= site_url('certificate/verify') ?>" method="post" novalidate>
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="certificate_id" id="vf_certificate_id" value="">
+
+                    <div class="mb-3">
+                        <label for="vf_name" class="form-label">Your Name</label>
+                        <input type="text" class="form-control" id="vf_name" name="name" required minlength="2" maxlength="255" placeholder="Enter your full name">
+                        <div class="invalid-feedback">Please enter your name (min 2 characters).</div>
                     </div>
-                </div>
+                    <div class="mb-3">
+                        <label for="vf_designation" class="form-label">Designation</label>
+                        <input type="text" class="form-control" id="vf_designation" name="designation" required minlength="2" maxlength="255" placeholder="Your designation">
+                        <div class="invalid-feedback">Please enter your designation.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="vf_company" class="form-label">Company Name</label>
+                        <input type="text" class="form-control" id="vf_company" name="company_name" required minlength="2" maxlength="255" placeholder="Company name">
+                        <div class="invalid-feedback">Please enter your company name.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="vf_contact" class="form-label">Contact No.</label>
+                        <input type="tel" class="form-control" id="vf_contact" name="contact_no" required minlength="5" maxlength="20" pattern="^[0-9+()\-\s]+$" placeholder="e.g. +1 234 567 890">
+                        <div class="invalid-feedback">Please enter a valid contact number.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="vf_country" class="form-label">Country</label>
+                        <input type="text" class="form-control" id="vf_country" name="country" required minlength="2" maxlength="100" placeholder="Country">
+                        <div class="invalid-feedback">Please enter your country.</div>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <span class="btn-text"><i class="fas fa-paper-plane me-2"></i>Submit</span>
+                            <span class="btn-loading d-none"><i class="fas fa-spinner fa-spin me-2"></i>Submitting...</span>
+                        </button>
+                    </div>
+                </form>
+                <div id="verificationErrors" class="alert alert-danger mt-3 d-none"></div>
             </div>
         </div>
     </div>
-</div>
+    </div>
+
 <?= $this->endSection() ?>
 
 <?= $this->section('scripts') ?>
@@ -311,90 +366,112 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Handle certificate details view
+    // Prepare modal with certificate id
     document.addEventListener('click', function(e) {
         if (e.target.closest('.view-details')) {
             const btn = e.target.closest('.view-details');
             const certId = btn.getAttribute('data-cert-id');
-            const detailsContainer = document.getElementById('certDetails');
-
-            fetch(`<?= site_url('certificate/details/') ?>${certId}`, {
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const cert = data.data;
-                    const statusClass = cert.status === 'Verified' ? 'success' : 
-                                      (cert.status === 'Pending' ? 'warning' : 'danger');
-                    const statusIcon = cert.status === 'Verified' ? 'check-circle' : 
-                                     (cert.status === 'Pending' ? 'clock' : 'times-circle');
-                    
-                    detailsContainer.innerHTML = `
-                        <div class="text-center mb-4">
-                            <h4 class="fw-bold text-primary mb-3">${cert.course}</h4>
-                            <span class="badge bg-${statusClass} rounded-pill px-4 py-2">
-                                <i class="fas fa-${statusIcon} me-2"></i>${cert.status}
-                            </span>
-                        </div>
-                        <div class="list-group list-group-flush">
-                            <div class="list-group-item px-0 py-3">
-                                <div class="text-muted small text-uppercase">Certificate Number</div>
-                                <div class="fw-semibold">${cert.certificate_no}</div>
-                            </div>
-                            <div class="list-group-item px-0 py-3">
-                                <div class="text-muted small text-uppercase">Student Name</div>
-                                <div class="fw-semibold">${cert.student_name}</div>
-                            </div>
-                            <div class="list-group-item px-0 py-3">
-                                <div class="text-muted small text-uppercase">Start Date</div>
-                                <div>${new Date(cert.start_date).toLocaleDateString('en-US', { 
-                                    day: 'numeric', 
-                                    month: 'long', 
-                                    year: 'numeric' 
-                                })}</div>
-                            </div>
-                            <div class="list-group-item px-0 py-3">
-                                <div class="text-muted small text-uppercase">End Date</div>
-                                <div>${new Date(cert.end_date).toLocaleDateString('en-US', { 
-                                    day: 'numeric', 
-                                    month: 'long', 
-                                    year: 'numeric' 
-                                })}</div>
-                            </div>
-                            <div class="list-group-item px-0 py-3">
-                                <div class="text-muted small text-uppercase">Issue Date</div>
-                                <div>${new Date(cert.date_of_issue).toLocaleDateString('en-US', { 
-                                    day: 'numeric', 
-                                    month: 'long', 
-                                    year: 'numeric' 
-                                })}</div>
-                            </div>
-                        </div>
-                        ${cert.status === 'Verified' ? `
-                            <div class="alert alert-success mt-4 mb-0">
-                                <i class="fas fa-shield-alt me-2"></i>
-                                This certificate has been verified and is authentic.
-                            </div>
-                        ` : ''}
-                    `;
-                } else {
-                    throw new Error('Failed to load certificate details');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                detailsContainer.innerHTML = `
-                    <div class="alert alert-danger mb-0">
-                        <i class="fas fa-exclamation-circle me-2"></i>
-                        An error occurred while loading the certificate details. Please try again.
-                    </div>
-                `;
-            });
+            document.getElementById('vf_certificate_id').value = certId;
+            // Reset previous state
+            document.getElementById('verificationForm').reset();
+            document.getElementById('verificationErrors').classList.add('d-none');
         }
     });
+
+    // Handle verification form submission
+    const verificationForm = document.getElementById('verificationForm');
+    if (verificationForm) {
+        verificationForm.addEventListener('submit', function(ev) {
+            ev.preventDefault();
+
+            // Client-side validation
+            let valid = true;
+            const requiredFields = ['vf_name','vf_designation','vf_company','vf_contact','vf_country'];
+            requiredFields.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el.checkValidity()) { valid = false; el.classList.add('is-invalid'); } else { el.classList.remove('is-invalid'); }
+            });
+            if (!valid) return;
+
+            const submitBtn = verificationForm.querySelector('button[type="submit"]');
+            submitBtn.querySelector('.btn-text').classList.add('d-none');
+            submitBtn.querySelector('.btn-loading').classList.remove('d-none');
+            submitBtn.disabled = true;
+
+            fetch(verificationForm.action, {
+                method: 'POST',
+                body: new FormData(verificationForm),
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(resp => resp.json())
+            .then(data => {
+                if (!data.success) {
+                    const errBox = document.getElementById('verificationErrors');
+                    errBox.classList.remove('d-none');
+                    errBox.innerHTML = (data.errors) ? Object.values(data.errors).join('<br>') : (data.message || 'Validation failed');
+                    return;
+                }
+
+                // Hide modal
+                const modalEl = document.getElementById('certDetailsModal');
+                const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                modal.hide();
+
+                // Render details section below
+                const section = document.getElementById('verificationDetailsSection');
+                const body = document.getElementById('verificationDetailsBody');
+                const cert = data.certificate;
+                const statusClass = cert.status === 'Verified' ? 'success' : (cert.status === 'Pending' ? 'warning' : 'danger');
+                const statusIcon = cert.status === 'Verified' ? 'check-circle' : (cert.status === 'Pending' ? 'clock' : 'times-circle');
+
+                body.innerHTML = `
+                    <div class="row g-3">
+                        <div class="col-12 text-center mb-2">
+                            <span class="badge bg-${statusClass} rounded-pill px-3 py-2">
+                                <i class="fas fa-${statusIcon} me-1"></i>${cert.status}
+                            </span>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="text-muted small">Certificate No</div>
+                            <div class="fw-semibold">${cert.certificate_no}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="text-muted small">Student Name</div>
+                            <div class="fw-semibold">${cert.student_name}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="text-muted small">Course</div>
+                            <div class="fw-semibold">${cert.course}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="text-muted small">Issue Date</div>
+                            <div class="fw-semibold">${new Date(cert.date_of_issue).toLocaleDateString()}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="text-muted small">Start Date</div>
+                            <div>${new Date(cert.start_date).toLocaleDateString()}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="text-muted small">End Date</div>
+                            <div>${new Date(cert.end_date).toLocaleDateString()}</div>
+                        </div>
+                    </div>`;
+                section.style.display = 'block';
+                section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            })
+            .catch(err => {
+                const errBox = document.getElementById('verificationErrors');
+                errBox.classList.remove('d-none');
+                errBox.textContent = 'An error occurred. Please try again.';
+            })
+            .finally(() => {
+                const submitBtn = verificationForm.querySelector('button[type="submit"]');
+                submitBtn.querySelector('.btn-text').classList.remove('d-none');
+                submitBtn.querySelector('.btn-loading').classList.add('d-none');
+                submitBtn.disabled = false;
+            });
+        });
+    }
 });
 </script>
 <?= $this->endSection() ?>

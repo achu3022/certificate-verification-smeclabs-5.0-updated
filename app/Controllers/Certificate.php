@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Controllers\BaseController;
 use App\Models\CertificateModel;
 use App\Models\SearchLogModel;
+use App\Models\CertificateVerificationModel;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class Certificate extends BaseController
@@ -17,6 +18,87 @@ class Certificate extends BaseController
         $this->certificateModel = new CertificateModel();
         $this->searchLogModel = new SearchLogModel();
         helper(['form', 'url']);
+    }
+
+    /**
+     * Handle public verification form submission
+     * Saves into certificate_verifications and returns certificate details
+     */
+    public function verify()
+    {
+        // Verify CSRF
+        $csrfCheck = $this->verifyCSRF();
+        if ($csrfCheck !== true) {
+            return $csrfCheck;
+        }
+
+        try {
+            $rules = [
+                'certificate_id' => 'required|is_natural_no_zero',
+                'name' => 'required|min_length[2]|max_length[255]',
+                'designation' => 'required|min_length[2]|max_length[255]',
+                'company_name' => 'required|min_length[2]|max_length[255]',
+                'contact_no' => 'required|min_length[5]|max_length[20]',
+                'country' => 'required|min_length[2]|max_length[100]'
+            ];
+
+            if (!$this->validate($rules)) {
+                $errors = $this->validator->getErrors();
+                return $this->response->setJSON([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $errors,
+                    'csrf_hash' => csrf_hash()
+                ])->setStatusCode(400);
+            }
+
+            $certId = (int) $this->request->getPost('certificate_id');
+            $certificate = $this->certificateModel->find($certId);
+            if (!$certificate) {
+                return $this->response->setJSON([
+                    'success' => false,
+                    'message' => 'Certificate not found',
+                    'csrf_hash' => csrf_hash()
+                ])->setStatusCode(404);
+            }
+
+            $verificationModel = new CertificateVerificationModel();
+            $verificationModel->insert([
+                'certificate_id' => $certId,
+                'name' => trim($this->request->getPost('name')),
+                'designation' => trim($this->request->getPost('designation')),
+                'company_name' => trim($this->request->getPost('company_name')),
+                'contact_no' => trim($this->request->getPost('contact_no')),
+                'country' => trim($this->request->getPost('country')),
+                'ip_address' => $this->request->getIPAddress(),
+                'user_agent' => $this->request->getUserAgent()->getAgentString(),
+            ]);
+
+            // Return certificate details for rendering on the page
+            return $this->response->setJSON([
+                'success' => true,
+                'message' => 'Verification submitted successfully',
+                'certificate' => [
+                    'id' => $certificate['id'],
+                    'certificate_no' => $certificate['certificate_no'],
+                    'student_name' => $certificate['student_name'],
+                    'course' => $certificate['course'],
+                    'start_date' => $certificate['start_date'],
+                    'end_date' => $certificate['end_date'],
+                    'date_of_issue' => $certificate['date_of_issue'],
+                    'status' => $certificate['status'],
+                ],
+                'csrf_hash' => csrf_hash()
+            ]);
+
+        } catch (\Throwable $e) {
+            log_message('error', 'Verification submission failed: ' . $e->getMessage());
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'An error occurred while submitting verification',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(500);
+        }
     }
 
     public function createSingle()

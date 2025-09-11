@@ -8,6 +8,7 @@ use CodeIgniter\Router\RouteCollection;
 $routes->get('/', 'Certificate::index');
 $routes->post('certificate/search', 'Certificate::search');
 $routes->get('certificate/details/(:num)', 'Certificate::details/$1');
+$routes->post('certificate/verify', 'Certificate::verify');
 
 // Auth Routes
 $routes->get('auth/login', 'Auth::login');
@@ -19,6 +20,7 @@ $routes->group('admin', ['filter' => 'auth'], function($routes) {
     $routes->get('dashboard', 'Admin::dashboard');
     $routes->get('certificates', 'Admin::certificates');
     $routes->get('search-logs', 'Admin::searchLogs');
+    $routes->get('verifications', 'Admin::verifications');
     $routes->post('search-logs/delete/(:num)', 'Admin::deleteSearchLog/$1');
     $routes->get('search-logs/export', 'Admin::exportSearchLogs');
     $routes->get('profile', 'Admin::profile');
