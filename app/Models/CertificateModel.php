@@ -38,7 +38,7 @@ class CertificateModel extends Model
 
     // Validation
     protected $validationRules = [
-        'certificate_no' => 'required|max_length[50]',
+        'certificate_no' => 'required|max_length[50]|is_unique[certificates.certificate_no,id,{id}]',
         'student_name'  => 'required|max_length[100]',
         'course'        => 'permit_empty|max_length[100]',
         'admission_no'  => 'permit_empty|max_length[50]',
@@ -62,8 +62,7 @@ class CertificateModel extends Model
             'max_length' => 'Course name cannot exceed 100 characters'
         ],
         'admission_no' => [
-            'max_length' => 'Admission number cannot exceed 50 characters',
-            'is_unique' => 'This admission number already exists'
+            'max_length' => 'Admission number cannot exceed 50 characters'
         ],
         'date_of_issue' => [
             'required' => 'Date of issue is required',
@@ -83,17 +82,6 @@ class CertificateModel extends Model
                          ->first();
             if ($exists) {
                 $this->validation->setError('certificate_no', 'This certificate number already exists');
-                return false;
-            }
-        }
-
-        // Check admission number uniqueness if provided
-        if (!empty($data['admission_no'])) {
-            $exists = $this->where('admission_no', $data['admission_no'])
-                         ->where('id !=', $id)
-                         ->first();
-            if ($exists) {
-                $this->validation->setError('admission_no', 'This admission number already exists');
                 return false;
             }
         }

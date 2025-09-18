@@ -1587,16 +1587,17 @@ $(document).ready(function() {
         $.ajax({
             url: '<?= site_url('admin/certificate/update-status') ?>',
             type: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            },
             data: {
                 id: certificateId,
-                status: status,
-                '<?= csrf_token() ?>': $('meta[name="csrf-token"]').attr('content')
+                status: status
             },
             dataType: 'json',
             success: function(response) {
-                const result = typeof response === 'string' ? JSON.parse(response) : response;
-                if (result.success) {
-                    showAlert('success', result.message);
+                if (response.success) {
+                    showAlert('success', response.message);
                     setTimeout(() => window.location.reload(), 1000);
                 } else {
                     showAlert('danger', result.message || 'An error occurred. Please try again.');
@@ -1610,18 +1611,24 @@ $(document).ready(function() {
 
     // Function to delete certificate
     function deleteCertificate(certificateId) {
+        if (!confirm('Are you sure you want to delete this certificate? This action cannot be undone.')) {
+            return;
+        }
+        
         $.ajax({
             url: '<?= site_url('admin/certificate/delete') ?>',
             type: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            },
             data: {
-                id: certificateId,
-                '<?= csrf_token() ?>': $('meta[name="csrf-token"]').attr('content')
+                id: certificateId
             },
             dataType: 'json',
             success: function(response) {
-                const result = typeof response === 'string' ? JSON.parse(response) : response;
-                if (result.success) {
-                    // Hide modal (ensure instance exists), clean overlay, then refresh
+                if (response.success) {
+                    showAlert('success', response.message);
+                    setTimeout(() => window.location.reload(), 1000);
                     const modalEl = document.getElementById('deleteModal');
                     if (modalEl) {
                         const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -1692,11 +1699,9 @@ $(document).ready(function() {
         
         // Get form data
         const formData = new FormData(this);
-        // Add CSRF token
-        formData.append('<?= csrf_token() ?>', $('meta[name="csrf-token"]').attr('content'));
         
         $.ajax({
-            url: '<?= base_url('admin/certificate/update') ?>',
+            url: '<?= site_url('admin/certificate/update') ?>',
             type: 'POST',
             data: formData,
             processData: false,
@@ -1757,18 +1762,19 @@ $(document).ready(function() {
         $.ajax({
             url: '<?= site_url('admin/certificate/update-status') ?>',
             type: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            },
             data: {
                 id: certificateId,
-                status: status,
-                '<?= csrf_token() ?>': $('meta[name="csrf-token"]').attr('content')
+                status: status
             },
             success: function(response) {
-                const result = typeof response === 'string' ? JSON.parse(response) : response;
-                if (result.success) {
-                    showAlert('success', result.message);
+                if (response.success) {
+                    showAlert('success', response.message);
                     setTimeout(() => window.location.reload(), 1000);
                 } else {
-                    showAlert('danger', result.message || 'An error occurred. Please try again.');
+                    showAlert('danger', response.message || 'An error occurred. Please try again.');
                 }
             },
             error: function() {

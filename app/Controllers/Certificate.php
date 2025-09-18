@@ -12,67 +12,293 @@ class Certificate extends BaseController
 {
     protected $certificateModel;
     protected $searchLogModel;
+    protected $verificationModel;
 
     public function __construct()
     {
         $this->certificateModel = new CertificateModel();
         $this->searchLogModel = new SearchLogModel();
-        helper(['form', 'url']);
+        $this->verificationModel = new \App\Models\CertificateVerificationModel();
+        helper(['form', 'url', 'text']);
+    }
+    
+    /**
+     * Search certificates by admission number
+     */
+    /**
+     * Search certificates by admission number
+     */
+    public function search()
+    {
+        // Get search term from POST or GET
+        $searchTerm = $this->request->getGet('admission_no') ?? $this->request->getPost('admission_no');
+        $format = $this->request->getGet('format');
+        
+        // Only force JSON if explicitly requested via format=json
+        // Otherwise, default to HTML view
+        if ($this->request->isAJAX() && $format !== 'json') {
+            $format = 'html';
+        }
+        
+        // Initialize data array with default values
+        $data = [
+            'searchTerm' => $searchTerm,
+            'certificates' => [],
+            'message' => null,
+            'success' => false
+        ];
+        
+        if (!empty($searchTerm)) {
+            try {
+                // Trim the search term to remove any extra whitespace
+                $searchTerm = trim($searchTerm);
+                
+                // Search for certificates by admission number (exact match and partial match)
+                $certificates = $this->certificateModel
+                    ->groupStart()
+                        ->where('admission_no', $searchTerm)
+                        ->orLike('admission_no', $searchTerm)
+                    ->groupEnd()
+                    ->orderBy('date_of_issue', 'DESC')
+                    ->findAll();
+                
+                // Log the search query for debugging
+                log_message('debug', 'Search term: ' . $searchTerm . ', Found certificates: ' . count($certificates));
+                
+                // Group certificates by admission number
+                $groupedCertificates = [];
+                foreach ($certificates as $cert) {
+                    $admissionNo = $cert['admission_no'];
+                    if (!isset($groupedCertificates[$admissionNo])) {
+                        $groupedCertificates[$admissionNo] = [
+                            'admission_no' => $admissionNo,
+                            'student_name' => $cert['student_name'],
+                            'certificates' => [],
+                            'certificate_count' => 0,
+                            'status_counts' => [
+                                'Verified' => 0,
+                                'Pending' => 0,
+                                'Rejected' => 0
+                            ]
+                        ];
+                    }
+                    
+                    $groupedCertificates[$admissionNo]['certificates'][] = $cert;
+                    $groupedCertificates[$admissionNo]['certificate_count']++;
+                    $groupedCertificates[$admissionNo]['status_counts'][$cert['status']]++;
+                }
+                
+                // Convert to indexed array for the view
+                $data['certificates'] = array_values($groupedCertificates);
+                $found = !empty($data['certificates']);
+                $data['success'] = true;
+                
+                // Log the search with found status and current timestamp
+                $db = \Config\Database::connect();
+                $currentTime = date('Y-m-d H:i:s');
+                $db->query("INSERT INTO search_logs (search_term, ip_address, user_agent, found, created_at) VALUES (?, ?, ?, ?, ?)", 
+                    [
+                        $searchTerm,
+                        $this->request->getIPAddress(),
+                        $this->request->getUserAgent()->getAgentString(),
+                        $found ? 1 : 0,
+                        $currentTime
+                    ]
+                );
+                                                             
+                if (!$found) {
+                    $data['message'] = 'No certificates found for this admission number.';
+                }
+                
+                // Return JSON only if explicitly requested via format=json
+                if ($format === 'json') {
+                    return $this->response->setJSON([
+                        'success' => $data['success'],
+                        'certificates' => $data['certificates'],
+                        'message' => $data['message'],
+                        'csrf_hash' => csrf_hash()
+                    ]);
+                }
+                
+                // Default to HTML view with the data
+                return view('certificates/search', $data);
+                
+            } catch (\Exception $e) {
+                log_message('error', 'Certificate search error: ' . $e->getMessage());
+                $data['message'] = 'An error occurred while searching for certificates.';
+                $data['success'] = false;
+                
+                if ($format === 'json' || $this->request->isAJAX()) {
+                    return $this->response->setJSON([
+                        'success' => false,
+                        'message' => $data['message'],
+                        'csrf_hash' => csrf_hash()
+                    ])->setStatusCode(500);
+                }
+            }
+        } else if ($format === 'json') {
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'Please provide an admission number to search',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(400);
+        }
+        
+        // Regular request - return full view
+        return view('certificates/search', $data);
     }
 
     /**
      * Handle public verification form submission
      * Saves into certificate_verifications and returns certificate details
      */
+    /**
+     * Get client IP address
+     */
+    public function getClientIp()
+    {
+        $ip = $this->request->getIPAddress();
+        
+        return $this->response->setJSON([
+            'success' => true,
+            'ip' => $ip,
+            'user_agent' => $this->request->getUserAgent()->getAgentString()
+        ]);
+    }
+    
+    /**
+     * Handle public verification form submission
+     */
     public function verify()
     {
-        // Verify CSRF
-        $csrfCheck = $this->verifyCSRF();
-        if ($csrfCheck !== true) {
-            return $csrfCheck;
+        // Get raw input for debugging
+        $rawInput = file_get_contents('php://input');
+        log_message('debug', 'Raw input: ' . $rawInput);
+        
+        // Get POST data directly
+        $input = $this->request->getPost();
+        
+        // If no POST data, try to parse as JSON
+        if (empty($input) && !empty($rawInput)) {
+            $input = json_decode($rawInput, true) ?: [];
         }
+        
+        // Ensure certificate_id is properly set and is a number
+        $certId = (int) ($input['certificate_id'] ?? 0);
+        
+        // Log the processed input data for debugging
+        log_message('debug', 'Processed input: ' . print_r($input, true));
+        
+        // Verify CSRF
+        $csrfToken = $input[csrf_token()] ?? '';
+        if (!hash_equals(csrf_hash(), $csrfToken)) {
+            log_message('error', 'CSRF token validation failed. Expected: ' . csrf_hash() . ', Got: ' . $csrfToken);
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'CSRF token validation failed',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(403);
+        }
+        
+        // Set certificate ID
+        $input['certificate_id'] = $certId;
 
         try {
-            $rules = [
-                'certificate_id' => 'required|is_natural_no_zero',
-                'name' => 'required|min_length[2]|max_length[255]',
-                'designation' => 'required|min_length[2]|max_length[255]',
-                'company_name' => 'required|min_length[2]|max_length[255]',
-                'contact_no' => 'required|min_length[5]|max_length[20]',
-                'country' => 'required|min_length[2]|max_length[100]'
-            ];
-
-            if (!$this->validate($rules)) {
-                $errors = $this->validator->getErrors();
+            // First check if certificate exists
+            $certId = (int) ($input['certificate_id'] ?? 0);
+            
+            if ($certId <= 0) {
                 return $this->response->setJSON([
                     'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => $errors,
+                    'message' => 'Invalid certificate ID',
+                    'errors' => ['certificate_id' => 'The certificate ID is required and must be a positive number'],
+                    'input_data' => $input,
                     'csrf_hash' => csrf_hash()
                 ])->setStatusCode(400);
             }
-
-            $certId = (int) $this->request->getPost('certificate_id');
+            
             $certificate = $this->certificateModel->find($certId);
+            
             if (!$certificate) {
                 return $this->response->setJSON([
                     'success' => false,
                     'message' => 'Certificate not found',
+                    'errors' => ['certificate_id' => 'No certificate found with the provided ID'],
+                    'input_data' => $input,
                     'csrf_hash' => csrf_hash()
                 ])->setStatusCode(404);
             }
+            
+            $rules = [
+                'name' => 'required|min_length[2]|max_length[255]',
+                'designation' => 'required|min_length[2]|max_length[255]',
+                'company_name' => 'required|min_length[2]|max_length[255]',
+                'contact_no' => 'required|min_length[5]|max_length[20]',
+                'country' => 'required|min_length[2]|max_length[100]',
+                'ip_address' => 'permit_empty',
+                'user_agent' => 'permit_empty'
+            ];
+            
+            // Set default values if not provided
+            $input['ip_address'] = $input['ip_address'] ?? $this->request->getIPAddress();
+            $input['user_agent'] = $input['user_agent'] ?? ($_SERVER['HTTP_USER_AGENT'] ?? 'unknown');
+            
+            // Validate input
+            $validation = \Config\Services::validation();
+            $validation->setRules($rules);
+            
+            if (!$validation->run($input)) {
+                $errors = $validation->getErrors();
+                log_message('error', 'Validation failed: ' . print_r($errors, true));
+                
+                return $this->response->setJSON([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $errors,
+                    'input_data' => $input,
+                    'csrf_hash' => csrf_hash()
+                ])->setStatusCode(400);
+            }
 
-            $verificationModel = new CertificateVerificationModel();
-            $verificationModel->insert([
+            $certId = (int) ($input['certificate_id'] ?? 0);
+            
+            // Log certificate lookup
+            log_message('debug', 'Looking up certificate with ID: ' . $certId);
+            
+            $certificate = $this->certificateModel->find($certId);
+            
+            if (!$certificate) {
+                log_message('error', 'Certificate not found with ID: ' . $certId);
+                return $this->response->setJSON([
+                    'success' => false,
+                    'message' => 'Certificate not found',
+                    'csrf_hash' => csrf_hash(),
+                    'certificate_id' => $certId
+                ])->setStatusCode(404);
+            }
+            
+            // Prepare verification data
+            $verificationData = [
                 'certificate_id' => $certId,
-                'name' => trim($this->request->getPost('name')),
-                'designation' => trim($this->request->getPost('designation')),
-                'company_name' => trim($this->request->getPost('company_name')),
-                'contact_no' => trim($this->request->getPost('contact_no')),
-                'country' => trim($this->request->getPost('country')),
-                'ip_address' => $this->request->getIPAddress(),
-                'user_agent' => $this->request->getUserAgent()->getAgentString(),
-            ]);
+                'name' => trim($input['name'] ?? ''),
+                'designation' => trim($input['designation'] ?? ''),
+                'company_name' => trim($input['company_name'] ?? ''),
+                'contact_no' => trim($input['contact_no'] ?? ''),
+                'country' => trim($input['country'] ?? ''),
+                'ip_address' => $input['ip_address'] ?? $this->request->getIPAddress(),
+                'user_agent' => $input['user_agent'] ?? ($_SERVER['HTTP_USER_AGENT'] ?? 'unknown'),
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+            
+            // Log the verification data being saved
+            log_message('debug', 'Saving verification data: ' . print_r($verificationData, true));
+            
+            // Save verification
+            $verificationModel = new CertificateVerificationModel();
+            $verificationModel->save($verificationData);
+            
+            // Log success
+            log_message('info', 'Verification saved successfully for certificate ID: ' . $certId);
 
             // Return certificate details for rendering on the page
             return $this->response->setJSON([
@@ -99,6 +325,32 @@ class Certificate extends BaseController
                 'csrf_hash' => csrf_hash()
             ])->setStatusCode(500);
         }
+    }
+
+    /**
+     * View certificate details
+     */
+    public function view($id = null)
+    {
+        if (empty($id)) {
+            return redirect()->back()->with('error', 'Certificate ID is required');
+        }
+
+        $certificate = $this->certificateModel->find($id);
+        if (!$certificate) {
+            return redirect()->back()->with('error', 'Certificate not found');
+        }
+
+        // Get verification details if any
+        $verification = $this->verificationModel->where('certificate_id', $id)
+            ->orderBy('created_at', 'DESC')
+            ->first();
+
+        return view('certificates/view', [
+            'certificate' => $certificate,
+            'verification' => $verification,
+            'title' => 'Certificate Details'
+        ]);
     }
 
     public function createSingle()
@@ -584,6 +836,12 @@ class Certificate extends BaseController
             'errors' => []
         ];
 
+        // Set error reporting for debugging
+        error_reporting(E_ALL);
+        ini_set('display_errors', 1);
+        
+        log_message('debug', '=== STARTING IMPORT PROCESS ===');
+
         try {
             // Debug log the request
             $method = $this->request->getMethod();
@@ -611,9 +869,16 @@ class Certificate extends BaseController
             //     throw new \RuntimeException('This endpoint only accepts AJAX requests.');
             // }
 
+            log_message('debug', 'Checking for uploaded file...');
             $file = $this->request->getFile('excel_file');
+            log_message('debug', 'File data: ' . print_r($file, true));
 
-            if (!$file || !$file->isValid()) {
+            if (!$file) {
+                log_message('error', 'No file found in request');
+                throw new \RuntimeException('No file was uploaded.');
+            }
+            
+            if (!$file->isValid()) {
                 throw new \RuntimeException($file ? $file->getErrorString() : 'No file uploaded');
             }
             
@@ -631,9 +896,17 @@ class Certificate extends BaseController
                 $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
             }
             
-            $spreadsheet = $reader->load($file->getPathname());
+            $filePath = $file->getPathname();
+            log_message('debug', 'Loading file from: ' . $filePath);
+            
+            if (!file_exists($filePath)) {
+                throw new \RuntimeException("File not found at: " . $filePath);
+            }
+            
+            $spreadsheet = $reader->load($filePath);
             $sheet = $spreadsheet->getActiveSheet();
             $rows = $sheet->toArray();
+            log_message('debug', 'Loaded ' . count($rows) . ' rows from spreadsheet');
             
             if (empty($rows)) {
                 throw new \RuntimeException('The uploaded file is empty');
@@ -647,6 +920,7 @@ class Certificate extends BaseController
             
             $imported = 0;
             $skipped = [];
+            log_message('debug', 'Starting to process rows...');
             
             foreach ($rows as $index => $row) {
                 $rowNumber = $index + ($skipHeader ? 2 : 1);
@@ -678,22 +952,33 @@ class Certificate extends BaseController
                         continue;
                     }
                     
-                    // Check for duplicates
+                    // Check for duplicate certificate number (only check certificate_no since admission_no can be duplicated)
                     $exists = $this->certificateModel
                         ->where('certificate_no', $data['certificate_no'])
-                        ->orWhere('admission_no', $data['admission_no'])
                         ->first();
                         
                     if ($exists) {
-                        $skipped[] = "Row $rowNumber: Duplicate certificate or admission number";
+                        $skipped[] = "Row $rowNumber: Duplicate certificate number: " . $data['certificate_no'];
                         continue;
                     }
                     
                     // Save the record
-                    if ($this->certificateModel->save($data)) {
-                        $imported++;
-                    } else {
-                        $skipped[] = "Row $rowNumber: Failed to save - " . implode(', ', $this->certificateModel->errors());
+                    log_message('debug', 'Attempting to save row: ' . print_r($data, true));
+                    
+                    try {
+                        if ($this->certificateModel->save($data)) {
+                            $imported++;
+                            log_message('debug', 'Successfully imported row ' . $rowNumber);
+                        } else {
+                            $errorMsg = "Row $rowNumber: Failed to save - " . implode(', ', $this->certificateModel->errors());
+                            $skipped[] = $errorMsg;
+                            log_message('error', $errorMsg);
+                        }
+                    } catch (\Exception $e) {
+                        $errorMsg = "Row $rowNumber: Exception - " . $e->getMessage();
+                        $skipped[] = $errorMsg;
+                        log_message('error', $errorMsg);
+                        log_message('error', $e->getTraceAsString());
                     }
                     
                 } catch (\Exception $e) {
@@ -702,8 +987,12 @@ class Certificate extends BaseController
                 }
             }
             
+            log_message('debug', 'Import completed. Success: ' . $imported . ', Skipped: ' . count($skipped));
+            
             if ($imported === 0 && empty($skipped)) {
-                throw new \RuntimeException('No valid data found to import');
+                $errorMsg = 'No valid data found to import. Please check the file format and try again.';
+                log_message('error', $errorMsg);
+                throw new \RuntimeException($errorMsg);
             }
             
             $message = "Successfully imported $imported certificates.";
@@ -971,72 +1260,7 @@ class Certificate extends BaseController
     }
 
     /**
-     * Search certificates by admission number
-     */
-    public function search()
-    {
-        // Get search term from POST or GET
-        $searchTerm = $this->request->getPost('admission_no') ?? $this->request->getGet('admission_no');
-        
-        // Initialize data array with default values
-        $data = [
-            'searchTerm' => $searchTerm,
-            'certificates' => [],
-            'message' => null
-        ];
-        
-        if (!empty($searchTerm)) {
-            try {
-                // Search for certificates by admission number first
-                $data['certificates'] = $this->certificateModel->where('admission_no', $searchTerm)
-                                                             ->orderBy('id', 'DESC')
-                                                             ->findAll();
-                
-                $found = !empty($data['certificates']);
-                
-                // Log the search with found status and current timestamp
-                $db = \Config\Database::connect();
-                $currentTime = date('Y-m-d H:i:s');
-                $db->query("INSERT INTO search_logs (search_term, ip_address, user_agent, found, created_at) VALUES (?, ?, ?, ?, ?)", 
-                    [
-                        $searchTerm,
-                        $this->request->getIPAddress(),
-                        $this->request->getUserAgent()->getAgentString(),
-                        $found ? 1 : 0,
-                        $currentTime
-                    ]
-                );
-                                                             
-                if (!$found) {
-                    $data['message'] = 'No certificates found for this admission number.';
-                }
-                
-                // For AJAX requests, return partial view
-                if ($this->request->isAJAX()) {
-                    return view('certificates/_results', $data);
-                }
-                
-            } catch (\Exception $e) {
-                log_message('error', 'Certificate search error: ' . $e->getMessage());
-                
-                if ($this->request->isAJAX()) {
-                    return $this->response->setJSON([
-                        'success' => false,
-                        'message' => 'An error occurred while searching for certificates.',
-                        'csrf_hash' => csrf_hash()
-                    ])->setStatusCode(500);
-                }
-                
-                $data['message'] = 'An error occurred while searching for certificates.';
-            }
-        }
-        
-        // Regular request - return full view
-        return view('certificates/search', $data);
-    }
-    
-    /**
-     * Update certificate status (Approve/Reject)
+     * Update certificate status
      */
     public function updateStatus()
     {
@@ -1047,179 +1271,223 @@ class Certificate extends BaseController
                 return $csrfCheck;
             }
             
-            // Debug logging
-            log_message('debug', 'Update Status Request - POST data: ' . print_r($this->request->getPost(), true));
-            log_message('debug', 'Update Status Request - Headers: ' . print_r($this->request->headers(), true));
-            log_message('debug', 'Update Status Request - Session: ' . print_r(session()->get(), true));
-            
-            // Check if user is logged in and is a super admin
-            if (!session()->get('isLoggedIn') || session()->get('role') !== 'super_admin') {
-                log_message('error', 'Unauthorized access attempt - Role: ' . session()->get('role'));
+            // Check if user is logged in and has permission
+            if (!session()->get('isLoggedIn')) {
                 return $this->response->setJSON([
                     'success' => false,
                     'message' => 'Unauthorized access',
                     'csrf_hash' => csrf_hash()
                 ])->setStatusCode(403);
             }
-            
+
             $id = $this->request->getPost('id');
             $status = $this->request->getPost('status');
-            
-            // Validate input parameters
-            if (empty($id) || empty($status)) {
-                if ($this->request->isAJAX()) {
-                    return $this->response->setJSON([
-                        'success' => false,
-                        'message' => 'Missing required parameters',
-                        'csrf_hash' => csrf_hash()
-                    ])->setStatusCode(400);
-                } else {
-                    session()->setFlashdata('error', 'Missing required parameters');
-                    return redirect()->back();
-                }
+
+            if (!$id || !$status) {
+                return $this->response->setJSON([
+                    'success' => false,
+                    'message' => 'Certificate ID and status are required',
+                    'csrf_hash' => csrf_hash()
+                ])->setStatusCode(400);
             }
-            
-            // Validate status value
-            if (!in_array($status, ['Verified', 'Rejected', 'Pending'])) {
-                if ($this->request->isAJAX()) {
-                    return $this->response->setJSON([
-                        'success' => false,
-                        'message' => 'Invalid status value',
-                        'csrf_hash' => csrf_hash()
-                    ])->setStatusCode(400);
-                } else {
-                    session()->setFlashdata('error', 'Invalid status value');
-                    return redirect()->back();
-                }
+
+            // Validate status
+            if (!in_array($status, ['Pending', 'Verified', 'Rejected'])) {
+                return $this->response->setJSON([
+                    'success' => false,
+                    'message' => 'Invalid status value',
+                    'csrf_hash' => csrf_hash()
+                ])->setStatusCode(400);
             }
-            
+
             // Check if certificate exists
             $certificate = $this->certificateModel->find($id);
             if (!$certificate) {
-                if ($this->request->isAJAX()) {
-                    return $this->response->setJSON([
-                        'success' => false,
-                        'message' => 'Certificate not found',
-                        'csrf_hash' => csrf_hash()
-                    ])->setStatusCode(404);
-                } else {
-                    session()->setFlashdata('error', 'Certificate not found');
-                    return redirect()->back();
-                }
-            }
-            
-            // Prepare update data
-            $updateData = [
-                'status' => $status,
-                'verified_by' => session()->get('id'),
-                'verified_at' => date('Y-m-d H:i:s')
-            ];
-            
-            // Update status
-            if ($this->certificateModel->update($id, $updateData)) {
-                log_message('info', "Certificate {$id} status updated to {$status} by admin ID " . session()->get('id'));
-                if ($this->request->isAJAX()) {
-                    return $this->response->setJSON([
-                        'success' => true,
-                        'message' => 'Certificate ' . strtolower($status) . ' successfully',
-                        'csrf_hash' => csrf_hash()
-                    ]);
-                } else {
-                    session()->setFlashdata('success', 'Certificate ' . strtolower($status) . ' successfully');
-                    return redirect()->to('/admin/certificates');
-                }
-            } else {
-                $errors = $this->certificateModel->errors();
-                $errorMsg = $errors ? implode(', ', $errors) : 'Failed to update certificate status';
-                if ($this->request->isAJAX()) {
-                    return $this->response->setJSON([
-                        'success' => false,
-                        'message' => $errorMsg,
-                        'csrf_hash' => csrf_hash()
-                    ])->setStatusCode(500);
-                } else {
-                    session()->setFlashdata('error', $errorMsg);
-                    return redirect()->back();
-                }
-            }
-        } catch (\Exception $e) {
-            log_message('error', 'Error updating certificate status: ' . $e->getMessage());
-            if ($this->request->isAJAX()) {
                 return $this->response->setJSON([
                     'success' => false,
-                    'message' => 'An error occurred while updating the certificate status',
+                    'message' => 'Certificate not found',
                     'csrf_hash' => csrf_hash()
-                ])->setStatusCode(500);
-            } else {
-                session()->setFlashdata('error', 'An error occurred while updating the certificate status');
-                return redirect()->back();
+                ])->setStatusCode(404);
             }
+
+            // Update status
+            if ($this->certificateModel->update($id, ['status' => $status])) {
+                log_message('info', "Certificate {$id} status updated to {$status}");
+                return $this->response->setJSON([
+                    'success' => true,
+                    'message' => 'Certificate status updated successfully',
+                    'csrf_hash' => csrf_hash()
+                ]);
+            }
+
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'Failed to update certificate status',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(500);
+
+        } catch (\Exception $e) {
+            log_message('error', 'Error updating certificate status: ' . $e->getMessage());
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'An error occurred while updating the certificate status',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(500);
         }
     }
-    
+
     /**
-     * Delete a certificate
+     * Delete certificate
      */
     public function delete()
     {
-        // Verify CSRF token
-        $csrfCheck = $this->verifyCSRF();
-        if ($csrfCheck !== true) {
-            return $csrfCheck;
-        }
-        
-        // Check if user is logged in and is an admin
-        if (!session()->get('isLoggedIn') || !in_array(session()->get('role'), ['admin', 'super_admin'])) {
-            if ($this->request->isAJAX()) {
+        try {
+            // Verify CSRF token
+            $csrfCheck = $this->verifyCSRF();
+            if ($csrfCheck !== true) {
+                return $csrfCheck;
+            }
+            
+            // Check if user is logged in and has permission
+            if (!session()->get('isLoggedIn')) {
                 return $this->response->setJSON([
                     'success' => false,
-                    'message' => 'Unauthorized access'
+                    'message' => 'Unauthorized access',
+                    'csrf_hash' => csrf_hash()
                 ])->setStatusCode(403);
-            } else {
-                session()->setFlashdata('error', 'Unauthorized access');
-                return redirect()->back();
             }
-        }
-        
-        $id = $this->request->getPost('id');
-        
-        if (empty($id)) {
-            if ($this->request->isAJAX()) {
+
+            $id = $this->request->getPost('id');
+
+            if (!$id) {
                 return $this->response->setJSON([
                     'success' => false,
-                    'message' => 'Certificate ID is required'
+                    'message' => 'Certificate ID is required',
+                    'csrf_hash' => csrf_hash()
                 ])->setStatusCode(400);
-            } else {
-                session()->setFlashdata('error', 'Certificate ID is required');
-                return redirect()->back();
             }
-        }
-        
-        $certificate = $this->certificateModel->find($id);
-        
-        if (!$certificate) {
-            if ($this->request->isAJAX()) {
+
+            // Check if certificate exists
+            $certificate = $this->certificateModel->find($id);
+            if (!$certificate) {
                 return $this->response->setJSON([
                     'success' => false,
-                    'message' => 'Certificate not found'
+                    'message' => 'Certificate not found',
+                    'csrf_hash' => csrf_hash()
                 ])->setStatusCode(404);
-            } else {
-                session()->setFlashdata('error', 'Certificate not found');
-                return redirect()->back();
             }
-        }
-        
-        // Delete the certificate
-        $this->certificateModel->delete($id);
-        
-        if ($this->request->isAJAX()) {
+
+            // Delete certificate
+            if ($this->certificateModel->delete($id)) {
+                log_message('info', "Certificate {$id} deleted");
+                return $this->response->setJSON([
+                    'success' => true,
+                    'message' => 'Certificate deleted successfully',
+                    'csrf_hash' => csrf_hash()
+                ]);
+            }
+
             return $this->response->setJSON([
-                'success' => true,
-                'message' => 'Certificate deleted successfully'
-            ]);
-        } else {
-            session()->setFlashdata('success', 'Certificate deleted successfully');
-            return redirect()->to('/admin/certificates');
+                'success' => false,
+                'message' => 'Failed to delete certificate',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(500);
+
+        } catch (\Exception $e) {
+            log_message('error', 'Error deleting certificate: ' . $e->getMessage());
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'An error occurred while deleting the certificate',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(500);
         }
     }
+
+    /**
+     * Get all certificates for an admission number (flat array for modal display)
+     */
+    public function getAllByAdmission()
+    {
+        // Get admission number from query parameter
+        $admissionNo = $this->request->getGet('admission_no');
+        
+        // Log the raw parameter received
+        log_message('debug', 'getAllByAdmission called with parameter: ' . var_export($admissionNo, true));
+        
+        if (!$admissionNo) {
+            log_message('debug', 'getAllByAdmission: No admission number provided');
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'Admission number is required',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(400);
+        }
+
+        try {
+            // Trim the admission number to remove any extra whitespace
+            $admissionNo = trim($admissionNo);
+            
+            // URL decode the admission number in case it's encoded
+            $admissionNo = urldecode($admissionNo);
+            log_message('debug', 'getAllByAdmission - After URL decode: ' . $admissionNo);
+            
+            // Get all certificates for this admission number (exact match)
+            $builder = $this->certificateModel->builder();
+            $builder->where('admission_no', $admissionNo);
+            $query = $builder->getCompiledSelect();
+            log_message('debug', 'getAllByAdmission - SQL Query: ' . $query);
+            
+            $certificates = $this->certificateModel
+                ->where('admission_no', $admissionNo)
+                ->orderBy('date_of_issue', 'DESC')
+                ->findAll();
+            
+            // Log the query for debugging
+            log_message('debug', 'getAllByAdmission - Admission No: ' . $admissionNo . ', Found certificates: ' . count($certificates));
+            
+            // Log first few characters of each admission_no in database for comparison
+            if (empty($certificates)) {
+                $allAdmissions = $this->certificateModel->select('admission_no')->findAll(5);
+                log_message('debug', 'Sample admission numbers in DB: ' . json_encode(array_column($allAdmissions, 'admission_no')));
+            }
+
+            if (empty($certificates)) {
+                return $this->response->setJSON([
+                    'success' => true,
+                    'certificates' => [],
+                    'message' => 'No certificates found for this admission number',
+                    'csrf_hash' => csrf_hash()
+                ]);
+            }
+
+            // Format dates for frontend display
+            foreach ($certificates as &$cert) {
+                if ($cert['start_date']) {
+                    $cert['start_date'] = date('Y-m-d', strtotime($cert['start_date']));
+                }
+                if ($cert['end_date']) {
+                    $cert['end_date'] = date('Y-m-d', strtotime($cert['end_date']));
+                }
+                if ($cert['date_of_issue']) {
+                    $cert['date_of_issue'] = date('Y-m-d', strtotime($cert['date_of_issue']));
+                }
+            }
+
+            return $this->response->setJSON([
+                'success' => true,
+                'certificates' => $certificates,
+                'count' => count($certificates),
+                'csrf_hash' => csrf_hash()
+            ]);
+
+        } catch (\Exception $e) {
+            log_message('error', 'Error retrieving certificates for admission ' . $admissionNo . ': ' . $e->getMessage());
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'An error occurred while retrieving certificates',
+                'csrf_hash' => csrf_hash()
+            ])->setStatusCode(500);
+        }
+    }
+
 }

@@ -6,9 +6,11 @@ use CodeIgniter\Router\RouteCollection;
  * @var RouteCollection $routes
  */
 $routes->get('/', 'Certificate::index');
-$routes->post('certificate/search', 'Certificate::search');
+$routes->match(['GET', 'POST'], 'certificate/search', 'Certificate::search');
 $routes->get('certificate/details/(:num)', 'Certificate::details/$1');
+$routes->get('certificate/all', 'Certificate::getAllByAdmission');
 $routes->post('certificate/verify', 'Certificate::verify');
+$routes->get('get-client-ip', 'Certificate::getClientIp');
 
 // Auth Routes
 $routes->get('auth/login', 'Auth::login');

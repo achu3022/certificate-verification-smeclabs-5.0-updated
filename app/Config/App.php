@@ -214,5 +214,5 @@ class App extends BaseConfig
     /**
      * Application Version
      */
-    public string $version = '5.0';
+    public string $version = '6.2.1';
 }
