@@ -57,3 +57,11 @@ $routes->group('admin', ['filter' => 'auth:super_admin'], function($routes) {
     $routes->post('admins/activate/(:num)', 'Admin::activateAdmin/$1');
     $routes->post('admins/deactivate/(:num)', 'Admin::deactivateAdmin/$1');
 });
+// API Routes
+$routes->group('api', function($routes) {
+    // Certificate sync endpoint with only API auth (for testing)
+    $routes->post('certificates/sync', 'Certificate::syncFromSheet', [
+        'namespace' => 'App\Controllers',
+        'filter' => 'apiAuth'  // Only API auth first for testing
+    ]);
+});

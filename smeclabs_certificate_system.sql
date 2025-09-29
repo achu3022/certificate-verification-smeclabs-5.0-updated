@@ -3,8 +3,8 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Sep 10, 2025 at 04:35 AM
--- Server version: 8.4.6-0ubuntu0.25.04.2
+-- Generation Time: Sep 18, 2025 at 06:16 AM
+-- Server version: 8.4.6-0ubuntu0.25.04.3
 -- PHP Version: 8.4.5
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
@@ -43,7 +43,8 @@ CREATE TABLE `admins` (
 --
 
 INSERT INTO `admins` (`id`, `name`, `email`, `password`, `role`, `status`, `created_at`, `updated_at`) VALUES
-(1, 'Super Admin', 'admin@smeclabs.org', '$2y$10$t7rGZ.CCjp2i9sY5fHkU2uDCu5o7ZlvRwM.DgR3mtUyq9hEUwHuka', 'super_admin', 'active', '2025-09-03 12:49:43', '2025-09-03 12:49:43');
+(1, 'Super Admin', 'admin@smeclabs.org', '$2y$10$t7rGZ.CCjp2i9sY5fHkU2uDCu5o7ZlvRwM.DgR3mtUyq9hEUwHuka', 'super_admin', 'active', '2025-09-03 12:49:43', '2025-09-03 12:49:43'),
+(3, 'hrsmec', 'hr@smeclabs.org', '$2y$12$DtwH5tMHhiM62NSNX43W6uSoKDUXSIsiyb5/OklyxX01LCQKUF0/2', 'admin', 'active', '2025-09-10 04:49:17', '2025-09-12 05:03:18');
 
 -- --------------------------------------------------------
 
@@ -72,10 +73,30 @@ CREATE TABLE `certificates` (
   `admission_no` varchar(50) COLLATE utf8mb4_general_ci NOT NULL,
   `course` varchar(100) COLLATE utf8mb4_general_ci NOT NULL,
   `student_name` varchar(100) COLLATE utf8mb4_general_ci NOT NULL,
-  `start_date` date NOT NULL,
-  `end_date` date NOT NULL,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
   `date_of_issue` date NOT NULL,
   `status` enum('Pending','Verified','Rejected') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Pending',
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `certificate_verifications`
+--
+
+CREATE TABLE `certificate_verifications` (
+  `id` int UNSIGNED NOT NULL,
+  `certificate_id` int UNSIGNED NOT NULL,
+  `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
+  `designation` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
+  `company_name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
+  `contact_no` varchar(20) COLLATE utf8mb4_general_ci NOT NULL,
+  `country` varchar(100) COLLATE utf8mb4_general_ci NOT NULL,
+  `ip_address` varchar(45) COLLATE utf8mb4_general_ci NOT NULL,
+  `user_agent` text COLLATE utf8mb4_general_ci,
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -95,16 +116,6 @@ CREATE TABLE `migrations` (
   `time` int NOT NULL,
   `batch` int UNSIGNED NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `migrations`
---
-
-INSERT INTO `migrations` (`id`, `version`, `class`, `group`, `namespace`, `time`, `batch`) VALUES
-(4, '2025-09-01-113020', 'App\\Database\\Migrations\\CreateCertificatesTable', 'default', 'App', 1756883743, 1),
-(5, '2025-09-01-113032', 'App\\Database\\Migrations\\CreateAdminsTable', 'default', 'App', 1756883743, 1),
-(6, '2025-09-01-113044', 'App\\Database\\Migrations\\CreateSearchLogsTable', 'default', 'App', 1756883743, 1),
-(7, '2025-09-03-000000', 'App\\Database\\Migrations\\AddFoundToSearchLogs', 'default', 'App', 1756885798, 2);
 
 -- --------------------------------------------------------
 
@@ -147,6 +158,13 @@ ALTER TABLE `certificates`
   ADD UNIQUE KEY `certificate_no` (`certificate_no`);
 
 --
+-- Indexes for table `certificate_verifications`
+--
+ALTER TABLE `certificate_verifications`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `certificate_verifications_certificate_id_foreign` (`certificate_id`);
+
+--
 -- Indexes for table `migrations`
 --
 ALTER TABLE `migrations`
@@ -166,7 +184,7 @@ ALTER TABLE `search_logs`
 -- AUTO_INCREMENT for table `admins`
 --
 ALTER TABLE `admins`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `admin_activities`
@@ -178,19 +196,35 @@ ALTER TABLE `admin_activities`
 -- AUTO_INCREMENT for table `certificates`
 --
 ALTER TABLE `certificates`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=416;
+
+--
+-- AUTO_INCREMENT for table `certificate_verifications`
+--
+ALTER TABLE `certificate_verifications`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `search_logs`
 --
 ALTER TABLE `search_logs`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `certificate_verifications`
+--
+ALTER TABLE `certificate_verifications`
+  ADD CONSTRAINT `certificate_verifications_certificate_id_foreign` FOREIGN KEY (`certificate_id`) REFERENCES `certificates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

@@ -707,7 +707,6 @@ class Certificate extends BaseController
         
         $id = $this->request->getPost('id');
         $rules = [
-            'certificate_no' => 'required|is_unique[certificates.certificate_no,id,' . $id . ']',
             'admission_no' => 'required',
             'student_name' => 'required|min_length[2]',
             'course' => 'required|min_length[2]',
@@ -732,7 +731,6 @@ class Certificate extends BaseController
         }
 
         $data = [
-            'certificate_no' => $this->request->getPost('certificate_no'),
             'admission_no' => $this->request->getPost('admission_no'),
             'student_name' => $this->request->getPost('student_name'),
             'course' => $this->request->getPost('course'),
@@ -1162,7 +1160,6 @@ class Certificate extends BaseController
             }
 
             $rules = [
-                'certificate_no' => 'required|is_unique[certificates.certificate_no,id,' . $id . ']',
                 'admission_no' => 'required',
                 'student_name' => 'required|min_length[2]',
                 'course' => 'required|min_length[2]',
@@ -1192,9 +1189,8 @@ class Certificate extends BaseController
                 }
             }
 
-            // Get form data
+            // Get form data (excluding certificate_no as it should not be editable)
             $data = [
-                'certificate_no' => trim($this->request->getPost('certificate_no')),
                 'admission_no' => trim($this->request->getPost('admission_no')),
                 'student_name' => trim($this->request->getPost('student_name')),
                 'course' => trim($this->request->getPost('course')),
@@ -1309,13 +1305,35 @@ class Certificate extends BaseController
                     'csrf_hash' => csrf_hash()
                 ])->setStatusCode(404);
             }
+            
+            // Get the current status before update
+            $oldStatus = $certificate['status'] ?? null;
+            $certificateNo = $certificate['certificate_no'] ?? null;
 
-            // Update status
+            // Update status in the database
             if ($this->certificateModel->update($id, ['status' => $status])) {
-                log_message('info', "Certificate {$id} status updated to {$status}");
+                log_message('info', "Certificate {$id} status updated from {$oldStatus} to {$status}");
+                
+                // Only update Google Sheet if the status has actually changed
+                if ($certificateNo && $oldStatus !== $status) {
+                    // Load the helper
+                    helper('google_sheets');
+                    
+                    // Update Google Sheet
+                    $sheetUpdate = updateGoogleSheetStatus($certificateNo, $status);
+                    
+                    if (!$sheetUpdate['success']) {
+                        // Log the error but don't fail the request
+                        log_message('error', 'Google Sheets update failed: ' . $sheetUpdate['message']);
+                        // You could also send an email notification here if needed
+                    }
+                }
+                
                 return $this->response->setJSON([
                     'success' => true,
                     'message' => 'Certificate status updated successfully',
+                    'sheet_updated' => $sheetUpdate['success'] ?? false,
+                    'sheet_message' => $sheetUpdate['message'] ?? '',
                     'csrf_hash' => csrf_hash()
                 ]);
             }
@@ -1331,6 +1349,7 @@ class Certificate extends BaseController
             return $this->response->setJSON([
                 'success' => false,
                 'message' => 'An error occurred while updating the certificate status',
+                'error' => $e->getMessage(),
                 'csrf_hash' => csrf_hash()
             ])->setStatusCode(500);
         }
@@ -1490,4 +1509,160 @@ class Certificate extends BaseController
         }
     }
 
+
+    /**
+     * Sync certificate data from Google Sheets
+     * 
+     * @return \CodeIgniter\HTTP\ResponseInterface
+     */
+    public function syncFromSheet()
+    {
+        // Rate limiting check (max 60 requests per minute per IP)
+        $throttler = \Config\Services::throttler();
+        if ($throttler->check('syncFromSheet-' . $this->request->getIPAddress(), 60, MINUTE) === false) {
+            log_message('warning', 'Rate limit exceeded for IP: ' . $this->request->getIPAddress());
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Too many requests. Please try again later.',
+                'code'    => 429
+            ])->setStatusCode(429);
+        }
+
+        // Verify request content type
+        if (!$this->request->is('json')) {
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Invalid content type. Expected application/json',
+                'code'    => 415
+            ])->setStatusCode(415);
+        }
+
+        $data = $this->request->getJSON(true);
+        
+        // Basic validation
+        if (empty($data)) {
+            log_message('error', 'Empty request body received in syncFromSheet');
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Request body cannot be empty',
+                'code'    => 400
+            ])->setStatusCode(400);
+        }
+
+        // Required fields validation
+        $requiredFields = ['certificate_no', 'admission_no', 'student_name', 'course', 'date_of_issue'];
+        $missingFields = [];
+        
+        foreach ($requiredFields as $field) {
+            if (empty($data[$field])) {
+                $missingFields[] = $field;
+            }
+        }
+
+        if (!empty($missingFields)) {
+            log_message('error', 'Missing required fields: ' . implode(', ', $missingFields));
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Missing required fields: ' . implode(', ', $missingFields),
+                'code'    => 400,
+                'missing_fields' => $missingFields
+            ])->setStatusCode(400);
+        }
+
+        // Validate date formats
+        $dateFields = ['start_date', 'end_date', 'date_of_issue'];
+        foreach ($dateFields as $dateField) {
+            if (!empty($data[$dateField]) && !strtotime($data[$dateField])) {
+                log_message('error', "Invalid date format for field: $dateField");
+                return $this->response->setJSON([
+                    'status'  => 'error',
+                    'message' => "Invalid date format for $date_field. Expected YYYY-MM-DD",
+                    'code'    => 400,
+                    'field'   => $dateField
+                ])->setStatusCode(400);
+            }
+        }
+
+        $model = new CertificateModel();
+        $certificateNo = $data['certificate_no'];
+        
+        // Log the sync attempt
+        log_message('info', "Processing sync for certificate: $certificateNo");
+        
+        try {
+            // Check if certificate already exists
+            $existing = $model->find($certificateNo);
+            
+            // Sanitize and prepare data
+            $allowedFields = array_flip($model->allowedFields);
+            $syncData = array_intersect_key($data, $allowedFields);
+            
+            // Format dates to Y-m-d
+            foreach ($dateFields as $dateField) {
+                if (!empty($syncData[$dateField])) {
+                    $syncData[$dateField] = date('Y-m-d', strtotime($syncData[$dateField]));
+                }
+            }
+            
+            // Handle existing record
+            if ($existing) {
+                // Check if there are actual changes
+                $changes = [];
+                foreach ($syncData as $key => $value) {
+                    if (array_key_exists($key, $existing) && $existing[$key] != $value) {
+                        $changes[$key] = $value;
+                    }
+                }
+                
+                if (empty($changes)) {
+                    log_message('info', "No changes detected for certificate: $certificateNo");
+                    return $this->response->setJSON([
+                        'status'  => 'no_changes',
+                        'message' => 'No changes detected',
+                        'code'    => 200
+                    ]);
+                }
+                
+                // Update existing record
+                $model->update($certificateNo, $changes);
+                
+                log_message('info', "Updated certificate: $certificateNo");
+                
+                return $this->response->setJSON([
+                    'status'   => 'updated',
+                    'message'  => 'Certificate updated successfully',
+                    'code'     => 200,
+                    'changes'  => $changes
+                ]);
+            } 
+            // Handle new record
+            else {
+                // Set default status if not provided
+                if (!isset($syncData['status'])) {
+                    $syncData['status'] = 'Pending';
+                }
+                
+                // Insert new record
+                $model->insert($syncData);
+                
+                log_message('info', "Created new certificate: $certificateNo");
+                
+                return $this->response->setJSON([
+                    'status'  => 'inserted',
+                    'message' => 'Certificate created successfully',
+                    'code'    => 201
+                ])->setStatusCode(201);
+            }
+            
+        } catch (\Exception $e) {
+            log_message('error', 'Error in syncFromSheet: ' . $e->getMessage() . '\n' . $e->getTraceAsString());
+            
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'An error occurred while processing your request',
+                'code'    => 500,
+                'error'   => ENVIRONMENT === 'development' ? $e->getMessage() : null
+            ])->setStatusCode(500);
+        }
+    }
 }

@@ -847,8 +847,14 @@
 <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edit Certificate</h5>
+            <div class="modal-header" id="editModalHeader">
+                <div>
+                    <h5 class="modal-title">Edit Certificate</h5>
+                    <div class="unsaved-changes-warning" id="unsavedChangesWarning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        You have unsaved changes
+                    </div>
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form id="editForm" action="<?= base_url('admin/certificate/update') ?>" method="POST" class="needs-validation" novalidate>
@@ -857,7 +863,8 @@
                     <?= csrf_field() ?>
                     <div class="mb-3">
                         <label class="form-label">Certificate Number</label>
-                        <input type="text" class="form-control" id="editCertificateNo" name="certificate_no" required>
+                        <input type="text" class="form-control" id="editCertificateNo" name="certificate_no" required readonly disabled style="background-color: #f8f9fa; cursor: not-allowed;">
+                        <small class="text-muted">Certificate number cannot be modified</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Admission Number</label>
@@ -961,6 +968,49 @@
 <?= $this->section('scripts') ?>
 <script>
 $(document).ready(function() {
+    // Track if edit modal is open to prevent accidental page refresh
+    let isEditModalOpen = false;
+    let hasUnsavedChanges = false;
+    
+    // Prevent page refresh when edit modal is open
+    window.addEventListener('beforeunload', function(e) {
+        if (isEditModalOpen && hasUnsavedChanges) {
+            const message = 'You have unsaved changes in the edit form. Are you sure you want to leave?';
+            e.preventDefault();
+            e.returnValue = message;
+            return message;
+        }
+    });
+    
+    // Track modal state
+    $('#editModal').on('show.bs.modal', function() {
+        isEditModalOpen = true;
+        hasUnsavedChanges = false;
+    });
+    
+    $('#editModal').on('hidden.bs.modal', function() {
+        isEditModalOpen = false;
+        hasUnsavedChanges = false;
+        // Hide visual warning
+        $('#editModalHeader').removeClass('has-unsaved-changes');
+        $('#unsavedChangesWarning').removeClass('show');
+    });
+    
+    // Track form changes to detect unsaved changes
+    $('#editForm input, #editForm select, #editForm textarea').on('input change', function() {
+        if (isEditModalOpen) {
+            hasUnsavedChanges = true;
+            // Show visual warning
+            $('#editModalHeader').addClass('has-unsaved-changes');
+            $('#unsavedChangesWarning').addClass('show');
+        }
+    });
+    
+    // Reset unsaved changes flag when form is successfully submitted
+    $('#editForm').on('submit', function() {
+        hasUnsavedChanges = false;
+    });
+    
     // Initialize Select2 for better select elements
     $('select[multiple]').select2({
         placeholder: 'Select options',
@@ -1712,12 +1762,15 @@ $(document).ready(function() {
             },
             success: function(response) {
                 if (response.success) {
+                    hasUnsavedChanges = false; // Reset unsaved changes flag on successful update
+                    // Hide visual warning
+                    $('#editModalHeader').removeClass('has-unsaved-changes');
+                    $('#unsavedChangesWarning').removeClass('show');
                     showAlert('success', 'Certificate updated successfully');
                     $('#editModal').modal('hide');
                     
-                    // Update the row in the table
+                    // Update the row in the table (certificate_no is not updated as it's not editable)
                     const row = $(`tr[data-id="${formData.get('id')}"]`);
-                    row.find('td:eq(1)').text(formData.get('certificate_no'));
                     row.find('td:eq(2)').text(formData.get('student_name'));
                     row.find('td:eq(3)').text(formData.get('course'));
                     row.find('td:eq(4)').text(new Date(formData.get('date_of_issue')).toLocaleDateString());
@@ -1811,6 +1864,27 @@ $(document).ready(function() {
 
 <?= $this->section('styles') ?>
 <style>
+    /* Unsaved Changes Indicator */
+    .modal-header.has-unsaved-changes {
+        background-color: #fff3cd !important;
+        border-bottom: 1px solid #ffeaa7 !important;
+    }
+    
+    .unsaved-changes-warning {
+        display: none;
+        color: #856404;
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+    
+    .unsaved-changes-warning.show {
+        display: block;
+    }
+    
+    .unsaved-changes-warning i {
+        margin-right: 0.25rem;
+    }
+    
     /* Enhanced Pagination Styles */
     .pagination {
         margin: 1.5rem 0;
